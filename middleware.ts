@@ -3,6 +3,12 @@ import { verifySession, SESSION_COOKIE_NAME } from "@/lib/session";
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
+
+  // Bypass session verification completely for public GET requests
+  if (pathname.startsWith("/api/incidents") && request.method === "GET") {
+    return NextResponse.next();
+  }
+
   const sessionCookie = request.cookies.get(SESSION_COOKIE_NAME)?.value;
   const session = sessionCookie ? await verifySession(sessionCookie) : null;
   const isAuthenticated = !!session;
@@ -25,7 +31,11 @@ export async function middleware(request: NextRequest) {
   }
 
   // 3. Protected API route: return 401 JSON for unauthenticated requests
-  if (pathname.startsWith("/api/simulate-accident")) {
+  if (
+    pathname.startsWith("/api/simulate-accident") ||
+    pathname.startsWith("/api/telegram") ||
+    (pathname.startsWith("/api/incidents") && request.method === "DELETE")
+  ) {
     if (!isAuthenticated) {
       return NextResponse.json(
         { error: "Unauthorized access" },
@@ -45,5 +55,7 @@ export const config = {
     "/login",
     "/api/simulate-accident",
     "/api/simulate-accident/:path*",
+    "/api/telegram/:path*",
+    "/api/incidents",
   ],
 };

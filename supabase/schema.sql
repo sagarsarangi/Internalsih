@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS public.incidents (
   victim_name TEXT,
   telegram TEXT,
   email TEXT,
+  sms TEXT,
   occurred_at TIMESTAMPTZ NOT NULL,
   status TEXT NOT NULL DEFAULT 'confirmed' CHECK (status = 'confirmed'),
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -24,7 +25,8 @@ CREATE TABLE IF NOT EXISTS public.incidents (
 -- ALTER TABLE public.incidents
 --   ADD COLUMN IF NOT EXISTS victim_name TEXT,
 --   ADD COLUMN IF NOT EXISTS telegram TEXT,
---   ADD COLUMN IF NOT EXISTS email TEXT;
+--   ADD COLUMN IF NOT EXISTS email TEXT,
+--   ADD COLUMN IF NOT EXISTS sms TEXT;
 
 -- 3. Create index for descending timestamp queries (newest-first)
 CREATE INDEX IF NOT EXISTS idx_incidents_occurred_at_desc 
@@ -45,4 +47,9 @@ USING (true);
 -- are performed server-side via the Supabase service-role client, which bypasses RLS.
 
 -- 6. Enable Realtime Replication for the incidents table
-ALTER PUBLICATION supabase_realtime ADD TABLE public.incidents;
+DO $$
+BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE public.incidents;
+EXCEPTION
+  WHEN duplicate_object THEN null;
+END $$;

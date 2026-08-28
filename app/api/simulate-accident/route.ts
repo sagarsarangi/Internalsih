@@ -14,10 +14,22 @@ import {
   EmergencyEmailDispatchResult,
 } from "@/lib/email";
 import { sendSmsAlert, SmsDispatchResult } from "@/lib/sms";
+import { verifySession, SESSION_COOKIE_NAME } from "@/lib/session";
 
 export async function POST(request: NextRequest) {
   try {
-    const rawBody = await request.json();
+    const sessionCookie = request.cookies.get(SESSION_COOKIE_NAME)?.value;
+    const session = sessionCookie ? await verifySession(sessionCookie) : null;
+    if (!session) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    let rawBody;
+    try {
+      rawBody = await request.json();
+    } catch (err) {
+      return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+    }
 
     // 1. Validate payload against Zod schema
     const parseResult = SimulateAccidentPayloadSchema.safeParse(rawBody);

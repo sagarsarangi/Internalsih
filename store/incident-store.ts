@@ -7,6 +7,7 @@ interface IncidentState {
   error: string | null;
   setIncidents: (incidents: Incident[]) => void;
   addIncident: (incident: Incident) => void;
+  removeIncident: (id: string) => void;
   setLoading: (isLoading: boolean) => void;
   setError: (error: string | null) => void;
 }
@@ -27,6 +28,10 @@ export const useIncidentStore = create<IncidentState>((set) => ({
         incidents: [incident, ...state.incidents],
       };
     }),
+  removeIncident: (id) =>
+    set((state) => ({
+      incidents: state.incidents.filter((inc) => inc.id !== id),
+    })),
   setLoading: (isLoading) => set({ isLoading }),
   setError: (error) => set({ error }),
 }));

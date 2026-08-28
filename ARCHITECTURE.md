@@ -37,11 +37,14 @@ is no separate Express/Node backend and no separate React SPA.
 
 ```
 /app
+  /actions
+    /auth.ts                       → Server Action: securely fetch default credentials from env vars
   /page.tsx                        → Landing page (public, hosts system showcase & <LoginManager />)
+  /dashboard/layout.tsx            → Server-side authentication guard for the dashboard
   /dashboard/page.tsx              → Admin dashboard + live map (protected)
   /api/login/route.ts              → POST: verify credentials, set session cookie (HS256 JWT)
   /api/logout/route.ts             → POST: clear session cookie
-  /api/incidents/route.ts          → GET: historical incidents (public)
+  /api/incidents/route.ts          → GET: historical incidents (public), DELETE: remove an incident (protected)
   /api/simulate-accident/route.ts  → POST: single-channel dispatch & confirm incident (protected)
   /api/telegram/sync-chat/route.ts → GET: fetch Telegram bot info & check configured Chat ID
   /globals.css                     → Design tokens and MapLibre overrides, per DESIGN.md
@@ -50,7 +53,7 @@ is no separate Express/Node backend and no separate React SPA.
   /ui
     /badge.tsx                     → Reusable status and channel pill badge
     /button.tsx                    → Reusable styled button with variants
-  /AccidentMap.tsx                 → MapLibre map: 4 tile styles, bounds fit, historical render + live tagging flow
+  /AccidentMap.tsx                 → MapLibre map: 4 tile styles, bounds fit, historical render + live tagging flow + incidents list drawer
   /emergency-dispatch-modal.tsx    → Single-channel dispatch console modal with error retry & tab switching
   /login-manager.tsx               → URL search param listener (?login=true) wrapped in React Suspense
   /login-modal.tsx                 → Admin login dialog modal with keyboard and backdrop dismiss
@@ -117,15 +120,16 @@ CREATE INDEX IF NOT EXISTS idx_incidents_occurred_at_desc ON public.incidents (o
 
 - Single admin credentials configured via `ADMIN_USERNAME` / `ADMIN_PASSWORD` environment variables.
 - **Edge Route Protection (`middleware.ts`)**:
-  - Guards `/dashboard/**` and `POST /api/simulate-accident`.
+  - Guards `/dashboard/**`, `POST /api/simulate-accident`, `DELETE /api/incidents`, and `GET /api/telegram/sync-chat`.
   - If unauthorized on a page route, redirects to `/?login=true`.
   - If unauthorized on an API route, returns HTTP 401 JSON.
   - If already authorized and visiting `/` or `/?login=true`, allows fast direct access to `/dashboard`.
-- **Modal Login Experience (`components/login-modal.tsx`, `components/login-manager.tsx`)**:
+- **Modal Login Experience (`components/login-modal.tsx`, `components/login-manager.tsx`, `app/actions/auth.ts`)**:
   - `LoginManager` monitors the URL search params on the landing page inside a `<Suspense>` boundary.
   - When `?login=true` is triggered (or "Sign In" button is clicked), `LoginModal` mounts over the landing page.
+  - The modal dynamically calls the `getDemoCredentials()` Server Action to fetch and pre-fill the username and password fields directly from environment variables.
   - Form submission sends credentials to `POST /api/login`.
-  - On success, `POST /api/login` issues an `httpOnly`, `sameSite=lax`, `secure` (in production) signed JWT cookie (`SESSION_SECRET`, HS256, 12h expiration) named `admin_session`, and the browser navigates directly to `/dashboard`.
+  - On success, `POST /api/login` issues an `httpOnly`, `sameSite=lax`, `secure` (in production) signed JWT cookie (`SESSION_SECRET`, HS256, 12h expiration) named `admin_session`, and the browser triggers a hard navigation (`window.location.href`) directly to `/dashboard` to ensure clean middleware state.
 - **Sign Out**: `POST /api/logout` clears the `admin_session` cookie and redirects the operator to `/`.
 
 ## 5. Request & Dispatch Flows
@@ -135,10 +139,11 @@ CREATE INDEX IF NOT EXISTS idx_incidents_occurred_at_desc ON public.incidents (o
 2. Fetches `GET /api/incidents` to load historical collisions.
 3. Validated against `IncidentListSchema` and loaded into `useIncidentStore`.
 4. Markers are rendered on the WebGL map canvas with interactive popups (coordinates, timestamp, geocoded address, victim ID, and delivery badges).
-5. Operators can switch between 4 tile providers (OSM Standard, CARTO Voyager, CARTO Positron, CARTO Dark Tactical) and click "LIVE Incidents" to dynamically fit the camera to all active markers.
+5. Operators can switch between 4 tile providers (OSM Standard, CARTO Voyager, CARTO Positron, CARTO Dark Tactical).
+6. **Incident Management**: The "LIVE" incidents badge toggles a drawer side-panel listing all active incidents. Admins can view details, locate them on the map, or permanently delete false-positives (removing them from the DB and syncing deletion across all clients via Realtime).
 
 ### Accident Tagging & Emergency Dispatch Workflow (Admin Only)
-1. **Tag Placement**: Operator clicks anywhere on the MapLibre canvas in `/dashboard`. A pulsating beacon is dropped, and a 10-second animated countdown bar mounts.
+1. **Tag Placement**: Operator enters latitude and longitude manually into the form overlay and clicks "Accident" in `/dashboard`. A pulsating beacon is dropped at those coordinates, and a 10-second animated countdown bar mounts.
 2. **Branch A (Cancel / False Alarm)**:
    - Operator clicks "False Alarm".
    - `usePendingTagStore.clearPendingTag()` clears state in memory.

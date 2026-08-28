@@ -3,8 +3,14 @@ import { LoginPayloadSchema } from "@/schemas/auth";
 import { signSession, SESSION_COOKIE_NAME } from "@/lib/session";
 
 export async function POST(request: NextRequest) {
+  let body;
   try {
-    const body = await request.json();
+    body = await request.json();
+  } catch (err) {
+    return NextResponse.json({ error: "Invalid JSON payload" }, { status: 400 });
+  }
+
+  try {
     const result = LoginPayloadSchema.safeParse(body);
 
     if (!result.success) {

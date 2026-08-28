@@ -15,7 +15,6 @@ import {
   Activity,
   Layers,
   LogOut,
-  Crosshair,
   Maximize2,
   CheckCircle2,
   AlertCircle,
@@ -24,6 +23,8 @@ import {
   Mail,
   MessageSquare,
   Phone,
+  MapPin,
+  Trash2,
 } from "lucide-react";
 import { useIncidentStore } from "@/store/incident-store";
 import { usePendingTagStore } from "@/store/pending-tag-store";
@@ -246,6 +247,67 @@ export default function AccidentMap({
   // Success / Dispatch Notification Toast state
   const [toast, setToast] = useState<NotificationToast | null>(null);
 
+  // Incidents List Side Panel State
+  const [isListOpen, setIsListOpen] = useState(false);
+
+  // Manual Simulation Coordinates
+  const [simulateLat, setSimulateLat] = useState<string>("");
+  const [simulateLng, setSimulateLng] = useState<string>("");
+
+  const handleManualSimulate = () => {
+    const latStr = simulateLat.trim();
+    const lngStr = simulateLng.trim();
+
+    if (!latStr || !lngStr) {
+      setToast({
+        type: "error",
+        title: "Missing Coordinates",
+        details: "Please enter both latitude and longitude.",
+      });
+      return;
+    }
+
+    const lat = parseFloat(latStr);
+    const lng = parseFloat(lngStr);
+    
+    if (isNaN(lat) || isNaN(lng)) {
+      setToast({
+        type: "error",
+        title: "Invalid Format",
+        details: "Coordinates must be valid decimal numbers.",
+      });
+      return;
+    }
+
+    if (lat < -90 || lat > 90) {
+      setToast({
+        type: "error",
+        title: "Invalid Latitude",
+        details: "Latitude must be between -90 and 90 degrees.",
+      });
+      return;
+    }
+
+    if (lng < -180 || lng > 180) {
+      setToast({
+        type: "error",
+        title: "Invalid Longitude",
+        details: "Longitude must be between -180 and 180 degrees.",
+      });
+      return;
+    }
+    
+    usePendingTagStore.getState().setPendingTag({
+      lat,
+      lng,
+      name: "",
+      contact: "",
+    });
+
+    setSimulateLat("");
+    setSimulateLng("");
+  };
+
   // Focus / Fit bounds to all incidents
   const fitToIncidents = useCallback(() => {
     const map = mapRef.current;
@@ -265,6 +327,41 @@ export default function AccidentMap({
     map.fitBounds(bounds, { padding: 80, maxZoom: 15, duration: 1000 });
   }, [incidents]);
 
+  const handleDeleteIncident = useCallback(async (id: string) => {
+    if (!isAdmin) return;
+    if (!window.confirm("Are you sure you want to completely delete this accident history from the database? This cannot be undone.")) return;
+
+    try {
+      setLoading(true);
+      const res = await fetch(`/api/incidents?id=${id}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || "Failed to delete incident");
+      }
+      useIncidentStore.getState().removeIncident(id);
+      const toastId = `delete-${id}`;
+      setToast({
+        id: toastId,
+        type: "success",
+        title: "Incident Deleted",
+        details: "The accident history was successfully removed from the project.",
+      });
+      setTimeout(() => {
+        setToast((prev) => (prev?.id === toastId ? null : prev));
+      }, 5000);
+    } catch (err: any) {
+      setToast({
+        type: "error",
+        title: "Delete Failed",
+        details: err.message,
+      });
+    } finally {
+      setLoading(false);
+    }
+  }, [isAdmin, setLoading]);
+
   // Sync Confirmed Markers Helper
   const syncMarkers = useCallback((currentIncidents: Incident[]) => {
     const map = mapRef.current;
@@ -275,6 +372,7 @@ export default function AccidentMap({
     // Remove deleted markers
     markersRef.current.forEach((marker, id) => {
       if (!currentIds.has(id)) {
+        marker.getPopup()?.remove();
         marker.remove();
         markersRef.current.delete(id);
       }
@@ -290,7 +388,6 @@ export default function AccidentMap({
       el.className = "accident-marker group cursor-pointer";
       el.innerHTML = `
         <div class="relative flex items-center justify-center">
-          <div class="absolute -inset-2.5 rounded-full bg-[#EDEDED]/25 animate-ping"></div>
           <div class="w-6 h-6 rounded-full bg-[#EDEDED] border-2 border-[#0A0A0A] shadow-xl flex items-center justify-center transition-transform group-hover:scale-125">
             <div class="w-2 h-2 rounded-full bg-[#0A0A0A]"></div>
           </div>
@@ -322,18 +419,31 @@ export default function AccidentMap({
       const contactDisplay =
         channelItems.length > 0 ? channelItems.join(" • ") : null;
 
+      const escapeHtml = (unsafe: string) => {
+        return unsafe
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;")
+          .replace(/'/g, "&#039;");
+      };
+
+      const safeVictimName = escapeHtml(incident.victim_name || "Unidentified");
+      const safeAddress = escapeHtml(incident.address || "Coordinates recorded (Address unavailable)");
+      const safeContactDisplay = contactDisplay ? escapeHtml(contactDisplay) : null;
+
       const victimInfo =
-        incident.victim_name || contactDisplay
+        safeVictimName !== "Unidentified" || safeContactDisplay
           ? `<div class="text-[11px] text-[#A1A1A1] pt-1.5 border-t border-white/[0.08] flex flex-col gap-1">
               <div class="flex items-center justify-between gap-2">
                 <span>👤 Identifier:</span>
-                <span class="text-[#EDEDED] font-medium truncate">${incident.victim_name || "Unidentified"}</span>
+                <span class="text-[#EDEDED] font-medium truncate">${safeVictimName}</span>
               </div>
               ${
-                contactDisplay
+                safeContactDisplay
                   ? `<div class="flex items-center justify-between gap-2">
                       <span>📡 Alert Sent:</span>
-                      <span class="font-mono text-[#EDEDED] text-[10.5px] truncate">${contactDisplay}</span>
+                      <span class="font-mono text-[#EDEDED] text-[10.5px] truncate">${safeContactDisplay}</span>
                     </div>`
                   : ""
               }
@@ -351,7 +461,7 @@ export default function AccidentMap({
             </span>
           </div>
           <div class="text-[13px] font-medium text-[#EDEDED] leading-snug">
-            ${incident.address || "Coordinates recorded (Address unavailable)"}
+            ${safeAddress}
           </div>
           <div class="text-[11px] text-[#A1A1A1] flex items-center justify-between pt-1 border-t border-white/[0.1]">
             <span>${incident.lat.toFixed(5)}, ${incident.lng.toFixed(5)}</span>
@@ -361,12 +471,23 @@ export default function AccidentMap({
         </div>
       `;
 
+      const popupContent = document.createElement("div");
+      popupContent.innerHTML = popupHtml;
+
+      if (isAdmin) {
+        const deleteBtn = document.createElement("button");
+        deleteBtn.className = "mt-2 w-full flex items-center justify-center gap-1.5 py-1.5 text-[11px] font-semibold bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded transition-colors border border-red-500/20 cursor-pointer";
+        deleteBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"></path><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path></svg> Delete Incident`;
+        deleteBtn.onclick = () => handleDeleteIncident(incident.id);
+        popupContent.querySelector(".space-y-2")?.appendChild(deleteBtn);
+      }
+
       const popup = new maplibregl.Popup({
         offset: 16,
         closeButton: true,
         closeOnClick: false,
         className: "custom-map-popup",
-      }).setHTML(popupHtml);
+      }).setDOMContent(popupContent);
 
       const marker = new maplibregl.Marker({
         element: el,
@@ -378,7 +499,7 @@ export default function AccidentMap({
 
       markersRef.current.set(incident.id, marker);
     });
-  }, []);
+  }, [isAdmin, handleDeleteIncident]);
 
   // Synchronize Pending Tag Marker on Map
   useEffect(() => {
@@ -400,7 +521,6 @@ export default function AccidentMap({
       el.className = "pending-marker cursor-pointer";
       el.innerHTML = `
         <div class="relative flex items-center justify-center">
-          <div class="absolute -inset-3.5 rounded-full bg-white/30 animate-ping"></div>
           <div class="w-7 h-7 rounded-full bg-[#EDEDED] border-2 border-[#111111] shadow-2xl flex items-center justify-center">
             <div class="w-2.5 h-2.5 rounded-full bg-[#111111] animate-pulse"></div>
           </div>
@@ -607,34 +727,7 @@ export default function AccidentMap({
         }
       });
 
-      // Admin Click-to-Tag Listener
-      if (isAdmin) {
-        map.getCanvas().style.cursor = "crosshair";
-
-        map.on("click", (e) => {
-          const originalTarget = e.originalEvent?.target as HTMLElement | null;
-          if (
-            originalTarget?.closest(".accident-marker") ||
-            originalTarget?.closest(".pending-marker") ||
-            originalTarget?.closest(".maplibregl-popup") ||
-            originalTarget?.closest(".maplibregl-ctrl")
-          ) {
-            return;
-          }
-
-          const currentPending = usePendingTagStore.getState().pendingTag;
-          if (currentPending) {
-            return;
-          }
-
-          usePendingTagStore.getState().setPendingTag({
-            lat: e.lngLat.lat,
-            lng: e.lngLat.lng,
-            name: "",
-            contact: "",
-          });
-        });
-      }
+      // Admin Click-to-Tag Listener is removed. User must manually input lat/long.
 
       map.on("error", (e) => {
         console.warn("MapLibre event:", e);
@@ -700,14 +793,24 @@ export default function AccidentMap({
         }
         const data: Incident[] = await res.json();
         if (isMounted) {
-          setIncidents(data);
+          const currentIncidents = useIncidentStore.getState().incidents;
+          const merged = [...data];
+          currentIncidents.forEach((liveInc) => {
+            if (!merged.some((d) => d.id === liveInc.id)) {
+              merged.unshift(liveInc);
+            }
+          });
+          // Sort merged by occurred_at descending
+          merged.sort((a, b) => new Date(b.occurred_at).getTime() - new Date(a.occurred_at).getTime());
+          
+          setIncidents(merged);
           const map = mapRef.current;
-          if (map && data.length > 0) {
-            if (data.length === 1) {
-              map.flyTo({ center: [data[0].lng, data[0].lat], zoom: 14 });
+          if (map && merged.length > 0) {
+            if (merged.length === 1) {
+              map.flyTo({ center: [merged[0].lng, merged[0].lat], zoom: 14 });
             } else {
               const bounds = new maplibregl.LngLatBounds();
-              data.forEach((inc) => bounds.extend([inc.lng, inc.lat]));
+              merged.forEach((inc) => bounds.extend([inc.lng, inc.lat]));
               map.fitBounds(bounds, { padding: 60, maxZoom: 15 });
             }
           }
@@ -733,7 +836,7 @@ export default function AccidentMap({
     };
   }, [setIncidents, setLoading, setError]);
 
-  // 3. Supabase Realtime live INSERT subscription (Phase 2)
+  // 3. Supabase Realtime live INSERT/DELETE subscription (Phase 2)
   useEffect(() => {
     const channel = supabaseBrowser
       .channel("public:incidents")
@@ -748,6 +851,19 @@ export default function AccidentMap({
           if (payload.new) {
             const newIncident = payload.new as Incident;
             useIncidentStore.getState().addIncident(newIncident);
+          }
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "DELETE",
+          schema: "public",
+          table: "incidents",
+        },
+        (payload) => {
+          if (payload.old && payload.old.id) {
+            useIncidentStore.getState().removeIncident(payload.old.id as string);
           }
         }
       )
@@ -872,9 +988,9 @@ export default function AccidentMap({
       {/* Incident Counter & Focus Badge */}
       <div className="absolute top-4 right-4 z-20 flex items-center gap-2">
         <button
-          onClick={fitToIncidents}
-          className="h-10 px-4 rounded-2xl bg-[#111111]/95 backdrop-blur-md text-[12px] text-[#EDEDED] flex items-center gap-3 border border-white/[0.08] shadow-lg hover:bg-[#1A1A1A] transition-all cursor-pointer focus-ring"
-          title="Click to zoom & fit all active incidents on map"
+          onClick={() => setIsListOpen(!isListOpen)}
+          className={`h-10 px-4 rounded-2xl bg-[#111111]/95 backdrop-blur-md text-[12px] text-[#EDEDED] flex items-center gap-3 border border-white/[0.08] shadow-lg transition-all cursor-pointer focus-ring ${isListOpen ? "bg-[#1A1A1A]" : "hover:bg-[#1A1A1A]"}`}
+          title="Toggle active incidents list"
         >
           <Badge variant="outline" className="px-2 py-0.5 h-5 rounded-full border-white/20 text-white">
             <Activity className="w-3 h-3 text-white" />
@@ -885,16 +1001,124 @@ export default function AccidentMap({
             {incidents.length === 1 ? "Incident" : "Incidents"}
           </span>
           {incidents.length > 0 && (
-            <Maximize2 className="w-3.5 h-3.5 text-white ml-0.5" />
+            <ChevronDown className={`w-3.5 h-3.5 text-white ml-0.5 transition-transform duration-200 ${isListOpen ? "rotate-180" : ""}`} />
           )}
         </button>
       </div>
 
-      {/* Admin Tap-to-Tag Instructional Prompt (when idle) */}
+      {/* Incidents List Side Panel */}
+      {isListOpen && (
+        <div className="absolute top-16 right-4 bottom-4 z-40 w-[92%] sm:w-[400px] max-h-[calc(100vh-5rem)] bg-[#111111]/95 backdrop-blur-xl border border-white/[0.08] rounded-3xl shadow-2xl flex flex-col overflow-hidden animate-modal-pop">
+          <div className="p-4 border-b border-white/[0.08] flex items-center justify-between shrink-0 bg-[#0A0A0A]/50">
+            <h2 className="text-[#EDEDED] text-[13px] font-semibold flex items-center gap-2">
+              <Activity className="w-4 h-4 text-red-500" />
+              Live Incidents ({incidents.length})
+            </h2>
+            <div className="flex gap-2">
+              <button
+                onClick={fitToIncidents}
+                className="p-1.5 bg-white/5 hover:bg-white/10 rounded-lg transition-colors text-white cursor-pointer"
+                title="Fit all incidents on map"
+              >
+                <Maximize2 className="w-3.5 h-3.5" />
+              </button>
+              <button
+                onClick={() => setIsListOpen(false)}
+                className="p-1.5 bg-white/5 hover:bg-white/10 rounded-lg transition-colors text-[#A1A1A1] hover:text-white cursor-pointer"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+          <div className="flex-1 overflow-y-auto p-3 space-y-3 custom-scrollbar">
+            {incidents.length === 0 ? (
+              <div className="text-center text-[#A1A1A1] mt-10 text-[13px]">
+                No active incidents right now.
+              </div>
+            ) : (
+              incidents.map((inc) => (
+                <div
+                  key={inc.id}
+                  className="bg-[#1A1A1A] border border-white/[0.08] rounded-2xl p-3 flex flex-col gap-2.5 transition-all hover:border-white/[0.15]"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <span className="text-[10px] font-mono bg-white/10 text-white px-2 py-0.5 rounded-full border border-white/10">
+                      Confirmed
+                    </span>
+                    <span className="text-[11px] text-[#A1A1A1] font-mono">
+                      {new Date(inc.occurred_at).toLocaleString(undefined, {
+                        month: "short",
+                        day: "numeric",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                    </span>
+                  </div>
+                  <div className="text-[13px] font-medium text-[#EDEDED] leading-snug">
+                    {inc.address || "Coordinates recorded (Address unavailable)"}
+                  </div>
+                  <div className="text-[11px] text-[#A1A1A1] flex justify-between pt-1 border-t border-white/[0.04]">
+                    <span>
+                      {inc.lat.toFixed(5)}, {inc.lng.toFixed(5)}
+                    </span>
+                    <span>👤 {inc.victim_name || "Unknown"}</span>
+                  </div>
+                  <div className="flex items-center gap-2 mt-1">
+                    <button
+                      onClick={() => {
+                        mapRef.current?.flyTo({ center: [inc.lng, inc.lat], zoom: 16 });
+                        if (window.innerWidth < 640) setIsListOpen(false);
+                      }}
+                      className="flex-1 text-[11px] py-1.5 bg-white/5 hover:bg-white/10 rounded-xl text-[#EDEDED] transition-colors flex items-center justify-center gap-1.5 cursor-pointer font-medium"
+                    >
+                      <MapPin className="w-3.5 h-3.5" /> Locate
+                    </button>
+                    {isAdmin && (
+                      <button
+                        onClick={() => handleDeleteIncident(inc.id)}
+                        className="flex-1 text-[11px] py-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/10 rounded-xl transition-colors flex items-center justify-center gap-1.5 cursor-pointer font-medium"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" /> Delete
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Admin Manual Simulation Form (when idle) */}
       {isAdmin && !pendingTag && (
-        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-20 pointer-events-none hidden sm:flex items-center gap-2 px-4 py-2 rounded-full bg-[#111111]/80 backdrop-blur-md border border-white/[0.08] text-[12px] text-[#A1A1A1] shadow-lg">
-          <Crosshair className="w-3.5 h-3.5 text-white" />
-          <span>Click anywhere on the map to simulate an emergency accident tag</span>
+        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-20 flex flex-col sm:flex-row items-center gap-3 px-4 py-3 rounded-2xl bg-[#111111]/90 backdrop-blur-md border border-white/[0.08] text-[13px] text-[#A1A1A1] shadow-lg">
+          <div className="flex items-center gap-2">
+            <span className="text-white font-medium">Lat:</span>
+            <input
+              type="text"
+              placeholder="e.g. 37.7749"
+              value={simulateLat}
+              onChange={(e) => setSimulateLat(e.target.value)}
+              className="bg-transparent border border-white/[0.1] rounded px-2 py-1 outline-none text-white w-[100px] focus:border-[#3291FF] transition-colors"
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-white font-medium">Lng:</span>
+            <input
+              type="text"
+              placeholder="e.g. -122.4194"
+              value={simulateLng}
+              onChange={(e) => setSimulateLng(e.target.value)}
+              className="bg-transparent border border-white/[0.1] rounded px-2 py-1 outline-none text-white w-[100px] focus:border-[#3291FF] transition-colors"
+            />
+          </div>
+          <button
+            onClick={handleManualSimulate}
+            className="flex items-center gap-1.5 bg-[#F1616B] hover:bg-[#d95560] text-white px-3 py-1.5 rounded transition-colors font-medium shadow-sm"
+          >
+            <AlertCircle className="w-4 h-4" />
+            Accident
+          </button>
         </div>
       )}
 

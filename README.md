@@ -38,7 +38,7 @@ Two-wheeler fatalities are high in India, often worsened by delayed emergency re
 - [Key Features](#key-features)
 - [System Architecture](#system-architecture)
 - [Operational Workflows & System Diagrams](#operational-workflows--system-diagrams)
-  - [1. Tap-to-Tag & 10s False Alarm Guard](#1-tap-to-tag--10s-false-alarm-guard)
+  - [1. Manual Coordinate Input & 10s False Alarm Guard](#1-manual-coordinate-input--10s-false-alarm-guard)
   - [2. Multi-Channel Emergency Dispatch & Atomic Verification Gate](#2-multi-channel-emergency-dispatch--atomic-verification-gate)
   - [3. Real-Time Multi-Terminal WebSocket Synchronization](#3-real-time-multi-terminal-websocket-synchronization)
 - [Database Schema & Security Architecture](#database-schema--security-architecture)
@@ -49,7 +49,8 @@ Two-wheeler fatalities are high in India, often worsened by delayed emergency re
 ## Key Features
 
 - **Interactive WebGL Vector Map (MapLibre GL)**: High-performance map canvas featuring 4 switchable tile providers (*OpenStreetMap Standard*, *CARTO Voyager*, *CARTO Positron*, and *CARTO Dark Tactical*), dynamic camera bounds fitting, and interactive incident popups.
-- **Operator Tap-to-Tag & Sensor Simulation**: Instant accident simulation via map clicking or telemetry ingestion with an interactive pulsing beacon and a 10-second visual countdown window.
+- **Active Incident Management Drawer**: Integrated side-panel to view all live incidents in a clean list format. Admins can quickly locate accidents on the map or permanently delete false-positives (which synchronizes deletion across all active terminals via WebSocket).
+- **Manual Coordinate Input & Sensor Simulation**: Instant accident simulation via manual latitude/longitude input with an interactive pulsing beacon and a 10-second visual countdown window.
 - **Zero-Pollution False Alarm Guard**: Client-side cancellation mechanism that aborts accidental triggers in memory before any network request or database write occurs.
 - **Multi-Channel Emergency Alert Dispatching**:
   - **SMS Gateway (TextBee API) [Default]**: Sends concise, high-priority SMS alerts with fixed `+91` (India) country codes, 10-digit mobile number validation, and direct Google Maps navigation links.
@@ -125,9 +126,9 @@ graph TD
 
 ## Operational Workflows & System Diagrams
 
-### 1. Tap-to-Tag & 10s False Alarm Guard
+### 1. Manual Coordinate Input & 10s False Alarm Guard
 
-When an operator clicks on the map canvas, a provisional accident tag is placed in memory. The system starts a 10-second countdown allowing the operator to dismiss accidental taps with zero network overhead.
+When an operator enters latitude and longitude in the form overlay, a provisional accident tag is placed in memory. The system starts a 10-second countdown allowing the operator to dismiss accidental triggers with zero network overhead.
 
 ```mermaid
 sequenceDiagram
@@ -138,7 +139,7 @@ sequenceDiagram
     participant Modal as Emergency Dispatch Modal
     participant API as Next.js Route Handler
 
-    Operator->>Map: Clicks on map coordinates (lat, lng)
+    Operator->>Form: Enters lat, lng and clicks "Accident"
     Map->>Store: setPendingTag({ lat, lng, taggedAt: Date.now() })
     Map->>Map: Mount pulsating beacon & start 10s countdown bar
 

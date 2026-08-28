@@ -61,7 +61,10 @@ export function EmergencyDispatchModal({
 
   // Auto-fetch Telegram config status on open
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen) {
+      setIsTelegramConfigured(null);
+      return;
+    }
 
     async function syncBotInfo() {
       try {

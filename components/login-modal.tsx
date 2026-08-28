@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { AlertCircle, Loader2, X } from "lucide-react";
+import { getDemoCredentials } from "@/app/actions/auth";
 
 export function LoginModal({
   isOpen,
@@ -14,8 +15,18 @@ export function LoginModal({
   const router = useRouter();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [defaultCreds, setDefaultCreds] = useState({ user: "", pass: "" });
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Fetch dynamic defaults from server action
+  useEffect(() => {
+    getDemoCredentials().then((creds) => {
+      setUsername(creds.username);
+      setPassword(creds.password);
+      setDefaultCreds({ user: creds.username, pass: creds.password });
+    });
+  }, []);
 
   // Handle escape key
   useEffect(() => {
@@ -63,8 +74,7 @@ export function LoginModal({
       }
 
       // Success: Route to dashboard
-      router.push("/dashboard");
-      router.refresh();
+      window.location.href = "/dashboard";
     } catch {
       setError("An unexpected network error occurred. Please try again.");
       setIsSubmitting(false);
@@ -104,7 +114,15 @@ export function LoginModal({
             Log in
           </h1>
           <p className="text-[14px] text-[#A1A1A1] mt-1.5 leading-relaxed">
-            Enter your credentials to access the admin dashboard
+            Enter your credentials to access the admin dashboard.
+            {defaultCreds.user && (
+              <>
+                <br />
+                <span className="text-[12px] mt-1 inline-block opacity-80">
+                  Default: <strong className="text-white font-medium">{defaultCreds.user}</strong> / <strong className="text-white font-medium">{defaultCreds.pass}</strong>
+                </span>
+              </>
+            )}
           </p>
         </div>
 
@@ -134,7 +152,7 @@ export function LoginModal({
               autoFocus
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              placeholder="admin"
+              placeholder={defaultCreds.user || "admin"}
               className="w-full h-11 px-3.5 rounded-2xl bg-[#1A1A1A] text-white text-[14px] placeholder-[#6E6E6E] border border-white/[0.08] focus:border-white/40 focus:ring-1 focus:ring-white/20 focus:outline-none transition-all"
             />
           </div>

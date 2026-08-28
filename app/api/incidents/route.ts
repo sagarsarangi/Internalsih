@@ -1,20 +1,12 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { supabaseServer } from "@/lib/supabase-server";
 import { IncidentListSchema } from "@/schemas/incident";
+import { verifySession, SESSION_COOKIE_NAME } from "@/lib/session";
+
+export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const supabaseKey =
-      process.env.SUPABASE_SERVICE_ROLE_KEY ||
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
-    if (!supabaseUrl || !supabaseKey) {
-      console.warn(
-        "[GET /api/incidents] Supabase URL or Key not set in environment variables."
-      );
-      return NextResponse.json([]);
-    }
 
     const { data, error } = await supabaseServer
       .from("incidents")
@@ -45,6 +37,45 @@ export async function GET() {
     console.error("[GET /api/incidents] Unexpected exception:", err);
     return NextResponse.json(
       { error: "An unexpected error occurred while loading telemetry" },
+      { status: 500 }
+    );
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get("id");
+
+    if (!id) {
+      return NextResponse.json({ error: "Missing incident ID" }, { status: 400 });
+    }
+
+    const sessionCookie = request.cookies.get(SESSION_COOKIE_NAME)?.value;
+    const session = sessionCookie ? await verifySession(sessionCookie) : null;
+
+    if (!session) {
+      return NextResponse.json({ error: "Unauthorized access" }, { status: 401 });
+    }
+
+    const { error } = await supabaseServer
+      .from("incidents")
+      .delete()
+      .eq("id", id);
+
+    if (error) {
+      console.error("[DELETE /api/incidents] Supabase error:", error);
+      return NextResponse.json(
+        { error: `Database error: ${error.message}` },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json({ success: true });
+  } catch (err) {
+    console.error("[DELETE /api/incidents] Unexpected exception:", err);
+    return NextResponse.json(
+      { error: "An unexpected error occurred while deleting the incident" },
       { status: 500 }
     );
   }
