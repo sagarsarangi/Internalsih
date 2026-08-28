@@ -156,11 +156,13 @@ export async function sendEmergencyEmailAlert(
       host: host,
       port: port,
       secure: port === 465,
+      // Force IPv4 to prevent ENETUNREACH errors when IPv6 is unsupported by the local network
+      family: 4,
       auth: {
         user: user,
         pass: pass,
       },
-    });
+    } as any);
 
     const info = await transporter.sendMail({
       from: from,
