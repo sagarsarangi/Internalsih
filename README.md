@@ -94,6 +94,7 @@ graph TD
         API_AUTH["POST /api/login & /api/logout"]
         API_INC["GET /api/incidents (Public)"]
         API_SIM["POST /api/simulate-accident (Protected)"]
+        API_HW["POST /api/hardware-webhook (Public IoT)"]
         API_TG["GET /api/telegram/sync-chat"]
     end
 
@@ -104,10 +105,19 @@ graph TD
         SMTP["SMTP Mail Server (Nodemailer)"]
     end
 
+    subgraph Hardware ["Hardware Edge"]
+        ESP32["IoT Smart Helmet (ESP32 + BNO055 + GPS)"]
+    end
+
     subgraph Persistence Layer ["Supabase Cloud"]
         DB[("PostgreSQL: public.incidents (RLS Protected)")]
         RT["Supabase Realtime Engine (WebSocket)"]
     end
+
+    ESP32 -->|"Auto-POST Crash Payload"| API_HW
+    API_HW --> GEO
+    API_HW --> SMS
+    API_HW -->|"Service-Role Insert on Verified Delivery"| DB
 
     D -->|"Simulate Collision Payload"| API_SIM
     API_AUTH <--> AUTH
@@ -157,9 +167,37 @@ sequenceDiagram
     end
 ```
 
+### 2. Autonomous IoT Hardware Webhook Flow (ESP32 Smart Helmet)
+
+When the rider's physical helmet detects a crash, it immediately triggers an autonomous, server-to-server webhook event. No dashboard operator interaction is required — the alert and dispatch run instantly.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Helmet as Smart Helmet (ESP32)
+    participant API as Next.js Webhook Route
+    participant Maps as LocationIQ
+    participant Gateway as TextBee SMS
+    participant DB as Supabase PostgreSQL
+    participant Dashboard as Operator MapLibre Dashboard
+
+    Helmet->>API: POST /api/hardware-webhook { event, lat, lng, acceleration_g }
+    API->>API: Validate coordinates & event type
+    API->>Maps: GET /v1/reverse (Reverse Geocode)
+    Maps-->>API: Street Address (or null on timeout)
+    API->>Gateway: POST /api/v1/gateway/devices/send-sms (to HARDWARE_SMS_RECIPIENT)
+    Gateway-->>API: 200 OK (Sent)
+    API->>DB: INSERT INTO public.incidents (lat, lng, status: "confirmed", sms_recipient)
+    DB-->>API: 201 Created
+    API-->>Helmet: 201 Created (Incident Persisted)
+    
+    DB-->>Dashboard: Realtime WebSocket Push (postgres_changes)
+    Dashboard->>Dashboard: Map flyTo(lat, lng) + Show Red Alert Toast
+```
+
 ---
 
-### 2. Multi-Channel Emergency Dispatch & Atomic Verification Gate
+### 3. Multi-Channel Emergency Dispatch & Atomic Verification Gate
 
 The backend processes the dispatch request, performs reverse geocoding, attempts alert delivery through the requested channel, and gates database persistence on confirmed delivery.
 
