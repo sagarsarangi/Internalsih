@@ -222,6 +222,7 @@ export default function AccidentMap({
 
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const markersRef = useRef<Map<string, maplibregl.Marker>>(new Map());
   const pendingMarkerRef = useRef<maplibregl.Marker | null>(null);
 
@@ -851,6 +852,31 @@ export default function AccidentMap({
           if (payload.new) {
             const newIncident = payload.new as Incident;
             useIncidentStore.getState().addIncident(newIncident);
+            
+            // Show a toast and fly to the new incident automatically
+            if (mapRef.current) {
+              mapRef.current.flyTo({
+                center: [newIncident.lng, newIncident.lat],
+                zoom: 16,
+                essential: true,
+              });
+            }
+            
+            setToast({
+              id: newIncident.id,
+              type: "error",
+              title: "Hardware Crash Detected!",
+              address: newIncident.address,
+              lat: newIncident.lat,
+              lng: newIncident.lng,
+              details: "Collision confirmed by helmet sensors. SMS dispatched.",
+            });
+            
+            if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+            toastTimerRef.current = setTimeout(() => {
+              setToast((prev) => (prev?.id === newIncident.id ? null : prev));
+              toastTimerRef.current = null;
+            }, 8000);
           }
         }
       )
@@ -875,6 +901,7 @@ export default function AccidentMap({
 
     return () => {
       supabaseBrowser.removeChannel(channel);
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     };
   }, []);
 

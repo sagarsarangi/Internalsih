@@ -165,6 +165,20 @@ CREATE INDEX IF NOT EXISTS idx_incidents_occurred_at_desc ON public.incidents (o
    - The dispatch modal closes, the local client adds the incident to `useIncidentStore`, and shows a delivery toast.
    - Supabase Realtime WebSocket subscription (`postgres_changes` on `public:incidents`) automatically broadcasts the newly inserted row to all active client sessions in real time.
 
+### Hardware Webhook Flow (IoT Smart Helmet → Automatic Dispatch)
+
+1. The IoT smart helmet (ESP32 with BNO055 + GPS) detects a confirmed collision and sends a `POST /api/hardware-webhook` request with JSON payload:
+   ```json
+   { "event": "accident_detected", "acceleration_g": 3.2, "gps_valid": true, "latitude": 12.9716, "longitude": 77.5946 }
+   ```
+2. The route validates the incoming payload fields and rejects requests with missing or invalid GPS data.
+3. Reads `HARDWARE_SMS_RECIPIENT` from env, prepends `+91`, dispatches SMS via TextBee, and inserts the confirmed incident into Supabase.
+4. Supabase Realtime broadcasts the new row to all connected dashboard clients instantly.
+5. The dashboard map auto-flies to the crash location and shows a red "Hardware Crash Detected!" toast with the SMS confirmation.
+6. **No operator interaction is required** — the entire flow is autonomous once the helmet posts.
+
+The `/api/hardware-webhook` route is **not** session-protected (the ESP32 has no browser cookie). This is intentional for a demo deployment.
+
 ## 6. Environment Variables
 
 Documented in `.env.example`:
@@ -174,6 +188,7 @@ Documented in `.env.example`:
 - `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_USERNAME`, `TELEGRAM_ALERT_CHAT_ID`
 - `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`
 - `TEXTBEE_API_KEY`, `TEXTBEE_DEVICE_ID`
+- `HARDWARE_SMS_RECIPIENT` — 10-digit Indian phone number; auto-SMSed (as `+91<number>`) when the helmet posts a confirmed crash
 
 ## 7. Non-negotiables
 

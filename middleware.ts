@@ -4,8 +4,11 @@ import { verifySession, SESSION_COOKIE_NAME } from "@/lib/session";
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // Bypass session verification completely for public GET requests
-  if (pathname.startsWith("/api/incidents") && request.method === "GET") {
+  // Bypass session verification completely for public GET requests and hardware webhook
+  if (
+    (pathname.startsWith("/api/incidents") && request.method === "GET") ||
+    (pathname.startsWith("/api/hardware-webhook") && request.method === "POST")
+  ) {
     return NextResponse.next();
   }
 
@@ -57,5 +60,6 @@ export const config = {
     "/api/simulate-accident/:path*",
     "/api/telegram/:path*",
     "/api/incidents",
+    "/api/hardware-webhook",
   ],
 };
